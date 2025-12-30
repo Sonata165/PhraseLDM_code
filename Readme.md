@@ -51,7 +51,7 @@ This project presents a hierachical model for full song multitrack symbolic musi
     pip install jiwer==4.0.0
 
 ## What did I do
-1. Convert POP909 dataset to midi version (data_preprocess/preprocess.py)
+1. Convert POP909 dataset to midi version (`data_preprocess/preprocess.py`)
 2. Prepare jsonl dataset at bar-level, position-level, phrase-level (`data_preprocess/preprocess.py`). Jsonl dataset is used for the VAE training. Note: bar-level jsonl is also needed since **the pretrain is done with the bar-level data**.
 3. Train VAE model (3 procedures). The configs used are:
     - Stage 1: `hparams/aes/bar_level/pretrain/s2s_span_infill.yaml`
