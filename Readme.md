@@ -117,7 +117,7 @@ After VAE training, we need to encode and decode existing REMI-z strings with it
 Our experiments are done with the assumption that key shifting do not negatively impact the playability of music. This is not strictly true, but is usually valid in majority of cases. Under such assumption, generating music that are in all 24 keys can be reduced to generating music in a single specified key (C major / A minor) and then shifting it to the desired key by the user. This is done with `Multitrack.normalize_pitch` in `REMI-z`. **Note: this operation must be conducted in song level!**
 
 ### Half Precision Not Working
-The current LDM does not support BF16 or FP16 training/inference yet. BF16 cause LDM loss value decrease lower, and diverge in latter half of training. FP16 converge well but the generation output is not of high quality (maybe somehow relates to the VAE implementation). With the current implementation, please use FP32 training. To support half precision training, you may want to check implementation and ensure both VAE and LDM works in a lower precision.
+The current LDM does not support BF16 or FP16 training/inference yet. BF16 cause LDM loss value decrease slower, and diverge in latter half of training. FP16 converge well but the generation output is not of high quality (maybe somehow relates to the VAE implementation). With the current implementation, please use FP32 training. To support half precision training, you may want to check implementation and ensure both VAE and LDM works in a lower precision.
 
 ## Some Useful Commands
     
