@@ -1,0 +1,61 @@
+# Training config for LitOneBarLatentDiffusion
+
+model:
+  class_path: experiments.diffusion_prior.lit_ldms.LitPhraseLDM
+  init_args:
+    model_config:
+      d_model: 128
+      d_ffn: 512
+      n_layer: 12
+      n_head: 8
+    lr: 1e-3
+    scale_factor: 5.64928  # Added scaling factor for constant scaling
+
+# Data module config (example, adjust as needed)
+data:
+  class_path: datasets.pop909_dataset.POP909DataModule
+  init_args:
+    jsonl_fp_train: /data1/longshen/Datasets/Piano/POP909/latents/bar_level_pos_seq/train_latents.pt
+    jsonl_fp_val: /data1/longshen/Datasets/Piano/POP909/latents/bar_level_pos_seq/val_latents.pt
+    batch_size: 1024
+    num_workers: 4
+    pin_memory: true
+    val_split: 0.1
+    dataset_class: POP909OneBarPosLatentDataset
+    dataset_kwargs:
+      scale: 'constant'
+      scaling_factor: 5.64928
+
+trainer:
+  logger:
+    class_path: pytorch_lightning.loggers.tensorboard.TensorBoardLogger
+    init_args:
+      save_dir: /data1/longshen/Results/AccGenResults/diffusion_prior/pos_latent/trial/stable/overfit_debug_new
+      name: tb_logs
+      default_hp_metric: false
+  check_val_every_n_epoch: 100
+  log_every_n_steps: 10
+  max_epochs: 10000
+  accelerator: gpu
+  devices: -1
+  precision: 32
+  default_root_dir: /data1/longshen/Results/AccGenResults/diffusion_prior/pos_latent/trial/stable/overfit_debug_new
+  callbacks:
+    - class_path: pytorch_lightning.callbacks.LearningRateMonitor
+    - class_path: pytorch_lightning.callbacks.ModelSummary
+      init_args:
+        max_depth: 2
+    - class_path: pytorch_lightning.callbacks.EarlyStopping
+      init_args:
+        monitor: val_loss
+        patience: 10
+        mode: min
+    - class_path: pytorch_lightning.callbacks.ModelCheckpoint
+      init_args:
+        monitor: val_loss
+        mode: min
+        save_top_k: 1
+        filename: '{epoch}_{step}_{val_loss:.4f}'
+        save_last: true
+
+

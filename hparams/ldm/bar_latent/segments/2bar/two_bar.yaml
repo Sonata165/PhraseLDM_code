@@ -1,0 +1,58 @@
+# Training config for LitOneBarLatentDiffusion
+
+model:
+  class_path: experiments.lit_ldms.LitOneBarLatentDiffusion
+  init_args:
+    model_config:
+      d_model: 512
+      n_layer: 6
+      n_head: 8
+    lr: 1e-3
+
+# Data module config (example, adjust as needed)
+data:
+  class_path: datasets.pop909_dataset.POP909DataModule
+  init_args:
+    jsonl_fp_train: /data1/longshen/Datasets/Piano/POP909/latents_2/pop909_piano_track_bars_train.pt
+    jsonl_fp_val: /data1/longshen/Datasets/Piano/POP909/latents_2/pop909_piano_track_bars_val.pt
+    batch_size: 1280
+    num_workers: 4
+    pin_memory: true
+    val_split: 0.1
+    dataset_class: POP909TwoBarLatentDataset
+    dataset_kwargs:
+      scaling_factor: 0.25946
+
+trainer:
+  logger:
+    class_path: pytorch_lightning.loggers.tensorboard.TensorBoardLogger
+    init_args:
+      save_dir: /data1/longshen/Results/AccGenResults/diffusion_prior/two_bar/6layer_vae_scaled/bs1280_lr1e-3_ep1000_debug
+      name: tb_logs
+      default_hp_metric: false
+  check_val_every_n_epoch: 10
+  log_every_n_steps: 10
+  max_epochs: 1000
+  accelerator: gpu
+  devices: -1
+  precision: 32
+  default_root_dir: /data1/longshen/Results/AccGenResults/diffusion_prior/two_bar/6layer_vae_scaled/bs1280_lr1e-3_ep1000_debug
+  callbacks:
+    - class_path: pytorch_lightning.callbacks.LearningRateMonitor
+    - class_path: pytorch_lightning.callbacks.ModelSummary
+      init_args:
+        max_depth: 2
+    - class_path: pytorch_lightning.callbacks.EarlyStopping
+      init_args:
+        monitor: val_loss
+        patience: 10
+        mode: min
+    - class_path: pytorch_lightning.callbacks.ModelCheckpoint
+      init_args:
+        monitor: val_loss
+        mode: min
+        save_top_k: 1
+        filename: '{epoch}_{step}_{val_loss:.4f}'
+        save_last: true
+
+
