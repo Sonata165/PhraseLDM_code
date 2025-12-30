@@ -21,6 +21,10 @@ This project presents a hierachical model for full song multitrack symbolic musi
 
     # Create a project dir
     mkdir PhraseLDM
+    cd PhraseLDM
+
+    # Clone this repository
+    git clone https://github.com/Sonata165/PhraseLDM_code.git
 
     # Install pytorch
     pip install torch==2.7.1 torchvision==0.22.1 torchaudio==2.7.1 --index-url https://download.pytorch.org/whl/cu128
