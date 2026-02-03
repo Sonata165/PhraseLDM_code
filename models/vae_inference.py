@@ -599,56 +599,156 @@ class MQVAE_Pos(nn.Module):
         else:
             return bar_strs
         
-class PhraseVAE(
-        nn.Module, 
-        PyTorchModelHubMixin,
-    ):
+# class PhraseVAE(
+#         nn.Module, 
+#         PyTorchModelHubMixin,
+#     ):
+#     """
+#     This is a wrapper class of S2SVAE3 model,
+#     providing easy-to-use inference API for Phrase-level VAE.
+#     """
+
+#     def __init__(self, ckpt_fp=None):
+#         super().__init__()
+
+#         # Initialize model parameters based on config
+#         if ckpt_fp is None:
+#             ckpt_fp = '/data1/longshen/Results/AccGenResults/aes/pretrained/vae/phrase_vae/epoch=75_step=171684_val_loss=0.0461.ckpt'
+
+#         model = S2SVAE3(
+#             tokenizer_path="LongshenOu/phrase-vae-tokenizer",
+#             t5_config={
+#                 "d_model": 512,
+#                 "d_ff": 1024,
+#                 "num_layers": 3,
+#                 "num_heads": 6,
+#                 "vocab_size": 1000,
+#                 "decoder_start_token_id": 1,
+#             },
+#             compress_style="first_n_tokens",
+#             n_compress_tokens=4,
+#             bottleneck_dim=64,
+#         )
+
+#         # Load state dict
+#         # Remove "model." prefix from state dict keys
+#         state_dict_new = {}
+#         for k, v in torch.load(ckpt_fp)["state_dict"].items():
+#             assert k.startswith("model.")
+#             k_new = k[len("model.") :]
+#             state_dict_new[k_new] = v
+#         model.load_state_dict(state_dict_new, strict=True)
+
+#         model.eval()
+#         self.model = model
+
+#         # Prepare tokenizer
+#         tokenizer_path = "LongshenOu/phrase-vae-tokenizer"
+#         self.tk = PreTrainedTokenizerFast.from_pretrained(tokenizer_path)
+
+#     # def from_pretrained(self, model_path):
+#     #     # Load model parameters from the specified path
+#     #     pass
+
+# import torch
+# import torch.nn as nn
+# from transformers import PreTrainedTokenizerFast
+# from huggingface_hub import PyTorchModelHubMixin
+
+class PhraseVAE(nn.Module, PyTorchModelHubMixin):
     """
-    This is a wrapper class of S2SVAE3 model,
-    providing easy-to-use inference API for Phrase-level VAE.
+    Inference wrapper for phrase-level VAE.
+    Hub-friendly: __init__ does NO file I/O.
     """
 
-    def __init__(self, ckpt_fp=None):
+    def __init__(
+        self,
+        tokenizer_repo_id: str = "LongshenOu/phrase-vae-tokenizer",
+        t5_config: dict = None,
+        compress_style: str = "first_n_tokens",
+        n_compress_tokens: int = 4,
+        bottleneck_dim: int = 64,
+        vocab_size: int = 1000,
+    ):
         super().__init__()
 
-        # Initialize model parameters based on config
-        if ckpt_fp is None:
-            ckpt_fp = '/data1/longshen/Results/AccGenResults/aes/pretrained/vae/phrase_vae/epoch=75_step=171684_val_loss=0.0461.ckpt'
-
-        model = S2SVAE3(
-            tokenizer_path="LongshenOu/phrase-vae-tokenizer",
-            t5_config={
+        if t5_config is None:
+            t5_config = {
                 "d_model": 512,
                 "d_ff": 1024,
                 "num_layers": 3,
                 "num_heads": 6,
-                "vocab_size": 1000,
+                "vocab_size": vocab_size,
                 "decoder_start_token_id": 1,
-            },
-            compress_style="first_n_tokens",
-            n_compress_tokens=4,
-            bottleneck_dim=64,
+            }
+
+        self.tokenizer_repo_id = tokenizer_repo_id
+        self.t5_config = t5_config
+        self.compress_style = compress_style
+        self.n_compress_tokens = n_compress_tokens
+        self.bottleneck_dim = bottleneck_dim
+
+        # Construct model architecture ONLY
+        self.model = S2SVAE3(
+            tokenizer_path=tokenizer_repo_id,
+            t5_config=t5_config,
+            compress_style=compress_style,
+            n_compress_tokens=n_compress_tokens,
+            bottleneck_dim=bottleneck_dim,
         )
 
-        # Load state dict
-        # Remove "model." prefix from state dict keys
-        state_dict_new = {}
-        for k, v in torch.load(ckpt_fp)["state_dict"].items():
-            assert k.startswith("model.")
-            k_new = k[len("model.") :]
-            state_dict_new[k_new] = v
-        model.load_state_dict(state_dict_new, strict=True)
+        # Lazy tokenizer
+        self._tk = None
 
-        model.eval()
-        self.model = model
+        self.eval()
 
-        # Prepare tokenizer
-        tokenizer_path = "LongshenOu/phrase-vae-tokenizer"
-        self.tk = PreTrainedTokenizerFast.from_pretrained(tokenizer_path)
+    @property
+    def tk(self):
+        if self._tk is None:
+            self._tk = PreTrainedTokenizerFast.from_pretrained(self.tokenizer_repo_id)
+        return self._tk
 
-    # def from_pretrained(self, model_path):
-    #     # Load model parameters from the specified path
-    #     pass
+    @classmethod
+    def from_lightning_ckpt(cls, ckpt_fp: str, device="cpu", torch_dtype=None):
+        ckpt = torch.load(ckpt_fp, map_location="cpu")
+
+        # 如果你在 lightning ckpt 的 hyper_parameters 里存过 config，优先用它
+        hp = ckpt.get("hyper_parameters", {})
+        tokenizer_repo_id = hp.get("tokenizer_repo_id", "LongshenOu/phrase-vae-tokenizer")
+        t5_config = hp.get("t5_config", {
+            "d_model": 512,
+            "d_ff": 1024,
+            "num_layers": 3,
+            "num_heads": 6,
+            "vocab_size": 1000,
+            "decoder_start_token_id": 1,
+        })
+        compress_style = hp.get("compress_style", "first_n_tokens")
+        n_compress_tokens = hp.get("n_compress_tokens", 4)
+        bottleneck_dim = hp.get("bottleneck_dim", 64)
+
+        obj = cls(
+            tokenizer_repo_id=tokenizer_repo_id,
+            t5_config=t5_config,
+            compress_style=compress_style,
+            n_compress_tokens=n_compress_tokens,
+            bottleneck_dim=bottleneck_dim,
+        )
+
+        # Load lightning state_dict: strip "model."
+        sd_new = {}
+        for k, v in ckpt["state_dict"].items():
+            if k.startswith("model."):
+                sd_new[k[len("model."):]] = v
+
+        obj.model.load_state_dict(sd_new, strict=True)
+
+        obj.eval()
+        if torch_dtype is not None:
+            obj = obj.to(dtype=torch_dtype)
+        obj = obj.to(device)
+        return obj
+
 
     def encode_batch(self, remiz_strs, do_sample=False):
         """
@@ -732,7 +832,7 @@ class PhraseVAE(
         
         return song_str
 
-    def decode_batch(self, latents, scale_factor=1.0, bar_sep=' ') -> List[str]:
+    def decode_batch(self, latents) -> List[str]:
         """
         Decode from latent representation to remiz string
         If return_mt is True, also return the MultiTrack object
@@ -740,9 +840,6 @@ class PhraseVAE(
         latents: (n_song, n_phrase, d_model)
         """
         assert latents.ndim == 3, "Latents should be 3D tensor of shape (batch, n_phrase, d_model), but got {}".format(latents.shape)
-
-        # Scale the latents
-        latents = latents * scale_factor
 
         song_strs = []
         for i in range(latents.shape[0]):

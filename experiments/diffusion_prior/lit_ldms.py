@@ -14,7 +14,7 @@ if project_root not in sys.path:
 import torch
 import pytorch_lightning as pl
 from torch import nn
-from models.diffusion_prior_onebar import (
+from PhraseLDM_code.models.diffusion_prior import (
     UnconditionedTransformerEnc,
     UnconditionalDiT,
     InstConfEncoder,

@@ -3,7 +3,7 @@ import sys
 
 sys.path.append("/home/longshen/work/AccGen/AccGen")
 
-from models.diffusion_prior_onebar import UnconditionedTransformerEnc
+from PhraseLDM_code.models.diffusion_prior import UnconditionedTransformerEnc
 import torch
 from tqdm import tqdm
 from diffusers import DDPMScheduler

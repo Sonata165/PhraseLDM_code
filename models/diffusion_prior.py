@@ -49,6 +49,7 @@ def test_unet():
     output = model(x, t, class_labels)
     print("Output shape:", output.shape)  # Should be (8, 1, 28, 28)
 
+
 def test_stable_dit():
     # Example usage of UnconditionalDiT
     model = UnconditionalDiT(
@@ -81,41 +82,46 @@ def test_stable_dit():
         hidden_states,
         timestep,
         encoder_hidden_states=encoder_hidden_states,
-        global_hidden_states=global_hidden_states
+        global_hidden_states=global_hidden_states,
     )
     print("Output shape:", output.sample.shape)  # Should be (8, 128, 16)
 
 
 class SecEncoder(nn.Module):
-    '''
+    """
     Encoder that deal with section input that looks like
     [
         'i-8 A-8 A-16 B-8 ...',  # song 1's section annotation
         'i-16 A-8 B-8 A-8 ...',  # song 2's section annotation
         ...
     ]
-    '''
+    """
+
     def __init__(self, conf_embed_dim=128, n_head=8, n_layer=3, max_len=30):
-        '''
+        """
         max_len: maximum length of instrument configuration sequence, 4 * max_n_bar
-        '''
+        """
         super().__init__()
         out_dim = conf_embed_dim
         embed_dim = out_dim // 2
-        
+
         # Define vocab
-        self.sec_type_vocab = {'o', 'b', 'A', 'i', 'B', 'x', 'E', 'c', 'X', 'D', 'C'}
+        self.sec_type_vocab = {"o", "b", "A", "i", "B", "x", "E", "c", "X", "D", "C"}
         self.sec_len_vocab = {str(i) for i in range(1, 33)}  # lengths from 1 to 32 bars
 
-        self.sec_type_to_id = {sec_type: idx + 1 for idx, sec_type in enumerate(self.sec_type_vocab)}
-        self.sec_len_to_id = {sec_len: idx + 1 for idx, sec_len in enumerate(self.sec_len_vocab)}
+        self.sec_type_to_id = {
+            sec_type: idx + 1 for idx, sec_type in enumerate(self.sec_type_vocab)
+        }
+        self.sec_len_to_id = {
+            sec_len: idx + 1 for idx, sec_len in enumerate(self.sec_len_vocab)
+        }
         self.pad_id = 0
 
         type_vocab_size = len(self.sec_type_vocab) + 1  # +1 for padding
         length_vocab_size = len(self.sec_len_vocab) + 1  # +1 for padding
         self.type_embed = nn.Embedding(type_vocab_size, embed_dim)
         self.len_embed = nn.Embedding(length_vocab_size, embed_dim)
-        
+
         self.sec_encoder = nn.TransformerEncoder(
             nn.TransformerEncoderLayer(
                 d_model=conf_embed_dim,
@@ -126,26 +132,26 @@ class SecEncoder(nn.Module):
             num_layers=n_layer,
         )
         self.max_len = max_len
-        self.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+        self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
     def forward(self, sec_annot, n_batch=None):
-        '''
+        """
         Section annot is a batch of section annotation strings:
         [
             'i-8 A-8 A-16 B-8 ...',  # song 1's section annotation
             'i-16 A-8 B-8 A-8 ...',  # song 2's section annotation
             ...
         ]
-        '''
+        """
         # Get sec type matrix
         sec_type_seqs = []
         sec_len_seqs = []
         for annot in sec_annot:
-            tokens = annot.split(' ')
+            tokens = annot.split(" ")
             type_seq = []
             len_seq = []
             for token in tokens:
-                sec_type, sec_len = token.split('-')
+                sec_type, sec_len = token.split("-")
                 type_seq.append(sec_type)
                 len_seq.append(sec_len)
             sec_type_seqs.append(type_seq)
@@ -174,7 +180,7 @@ class SecEncoder(nn.Module):
         sec_encoded = self.sec_encoder(sec_emb)  # (bs, max_len, dim)
 
         # Attention mask
-        n_secs = [len(annot.split(' ')) for annot in sec_annot]
+        n_secs = [len(annot.split(" ")) for annot in sec_annot]
         attn_mask = torch.zeros(len(sec_annot), self.max_len).to(self.device)
         for i, n_sec in enumerate(n_secs):
             attn_mask[i, :n_sec] = 1
@@ -183,13 +189,16 @@ class SecEncoder(nn.Module):
 
 
 class InstConfEncoder(nn.Module):
-    '''
+    """
     Encoder that deal with instrument configuration input
-    '''
-    def __init__(self, vocab_size=5, conf_embed_dim=128, n_head=8, n_layer=3, max_len=512):
-        '''
+    """
+
+    def __init__(
+        self, vocab_size=5, conf_embed_dim=128, n_head=8, n_layer=3, max_len=512
+    ):
+        """
         max_len: maximum length of instrument configuration sequence, 4 * max_n_bar
-        '''
+        """
         super().__init__()
         self.inst_embed = nn.Embedding(vocab_size, conf_embed_dim)
         self.inst_encoder = nn.TransformerEncoder(
@@ -202,35 +211,35 @@ class InstConfEncoder(nn.Module):
             num_layers=n_layer,
         )
         self.max_len = max_len
-        self.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+        self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
     def forward(self, inst_conf, n_batch=None):
-        '''
-        inst config is a batch of instrument configuration token sequences: 
+        """
+        inst config is a batch of instrument configuration token sequences:
         [
             [i-0, i-13, b-1, i-25, i-13, i-0, b-1, ...],  # song 1's instrumentation config
             [i-0, i-0, i-0, b-1, i-13, i-25, b-1, ...],  # song 2's instrumentation config
             ...
         ]
-        '''
+        """
         # Convert to ids
-        inst_conf_ids, attn_mask = self.tokenize(inst_conf) # (bs, max_len)
+        inst_conf_ids, attn_mask = self.tokenize(inst_conf)  # (bs, max_len)
         inst_conf_emb = self.inst_embed(inst_conf_ids)  # (bs, max_len, dim)
         inst_conf_encoded = self.inst_encoder(inst_conf_emb)  # (bs, max_len, dim)
 
         return inst_conf_encoded, attn_mask
 
     def tokenize(self, inst_conf):
-        '''
+        """
         Convert instrument configuration to ids
-        '''
+        """
         # Simple mapping for demonstration purposes
         token_to_id = {
-            'i-0': 2,
-            'i-13': 1,
-            'i-25': 3,
-            'b-1': 0,
-            'pad': 4,
+            "i-0": 2,
+            "i-13": 1,
+            "i-25": 3,
+            "b-1": 0,
+            "pad": 4,
         }
         inst_conf_ids = []
         for seq in inst_conf:
@@ -244,11 +253,14 @@ class InstConfEncoder(nn.Module):
 
         attention_mask = torch.zeros(len(inst_conf), self.max_len).to(self.device)
         for i, seq in enumerate(inst_conf):
-            attention_mask[i, :len(seq)] = 1
+            attention_mask[i, : len(seq)] = 1
 
-        inst_conf_tensor = torch.tensor(inst_conf_ids, dtype=torch.long).to(self.device) # (bs, max_len)
+        inst_conf_tensor = torch.tensor(inst_conf_ids, dtype=torch.long).to(
+            self.device
+        )  # (bs, max_len)
 
         return inst_conf_tensor, attention_mask
+
 
 class LengthEncoder(nn.Module):
     def __init__(self, max_bar=128, len_embed_dim=128, length_bucket_size=10):
@@ -256,15 +268,17 @@ class LengthEncoder(nn.Module):
         self.length_embedding = nn.Embedding(max_bar, len_embed_dim)
         self.length_bucket_size = length_bucket_size
 
-    def forward(self, n_bar, n_batch=None):
-        '''
+    def forward(self, n_bar):
+        """
         Forward pass for length encoding
-        
+
         n_bar: (bs,) tensor of number of bars
-        '''
-        length_buckets = (n_bar / self.length_bucket_size).long() 
-        print(f'Length Buckets: {length_buckets}')
-        length_embeds = self.length_embedding(length_buckets).unsqueeze(1)  # (bs, 1, dim)
+        """
+        length_buckets = (n_bar / self.length_bucket_size).long()
+        print(f"Length Buckets: {length_buckets}")
+        length_embeds = self.length_embedding(length_buckets).unsqueeze(
+            1
+        )  # (bs, 1, dim)
 
         return length_embeds
 
@@ -299,7 +313,6 @@ class UnconditionalDiT(StableAudioDiTModel):
             global_states_input_dim=global_states_input_dim,
             cross_attention_input_dim=cross_attention_input_dim,
         )
-        
 
     def forward(
         self,
@@ -362,7 +375,11 @@ class UnconditionalDiT(StableAudioDiTModel):
         # prepend global states to hidden states
         hidden_states = torch.cat([global_hidden_states, hidden_states], dim=-2)
         if attention_mask is not None:
-            prepend_mask = torch.ones((hidden_states.shape[0], 1), device=hidden_states.device, dtype=torch.bool)
+            prepend_mask = torch.ones(
+                (hidden_states.shape[0], 1),
+                device=hidden_states.device,
+                dtype=torch.bool,
+            )
             attention_mask = torch.cat([prepend_mask, attention_mask], dim=-1)
 
         # Prepare rotary embeddings
@@ -373,11 +390,6 @@ class UnconditionalDiT(StableAudioDiTModel):
             use_real=True,
             repeat_interleave_real=False,
         )
-
-        # # Add learnable positional embedding
-        # pos_ids = torch.arange(hidden_states.shape[1], device=hidden_states.device).unsqueeze(0).expand(hidden_states.shape[0], -1)
-        # pos_emb = self.pos_emb(pos_ids)
-        # hidden_states = hidden_states + pos_emb
 
         for block in self.transformer_blocks:
             if torch.is_grad_enabled() and self.gradient_checkpointing:
@@ -410,42 +422,34 @@ class UnconditionalDiT(StableAudioDiTModel):
             return (hidden_states,)
 
         return Transformer2DModelOutput(sample=hidden_states)
-    
-    def generate(self, n_sample, noise_scheduler, verbose=False, length_embeds=None, sec_embeds=None, sec_attn_mask=None):
-        '''
+
+    def generate(
+        self,
+        n_sample,
+        noise_scheduler,
+        verbose=False,
+        length_embeds=None,
+        sec_embeds=None,
+        sec_attn_mask=None,
+    ):
+        """
         Generate n latent sequences
-        '''
+        """
         max_pos = self.max_pos
         x = torch.randn(n_sample, max_pos, self.input_dim).to(self.device)
 
         if length_embeds is None:
-            length_embeds = torch.zeros(n_sample, 1, 128).to(x.device) # dummy variable
+            length_embeds = torch.zeros(n_sample, 1, 128).to(x.device)  # dummy variable
 
         if sec_embeds is None:
-            sec_embeds = torch.zeros(n_sample, 7, 128).to(x.device) # dummy variable
+            sec_embeds = torch.zeros(n_sample, 7, 128).to(x.device)  # dummy variable
 
         # Sampling loop
         if verbose is False:
             loop = enumerate(noise_scheduler.timesteps)
-            # for i, t in loop:
-            #     x = x.to(self.device)
-            #     t = t.to(self.device)
-            #     # broadcast t to (bs,)
-            #     t = t.expand(x.size(0)).to(x.device)
-
-            #     with torch.no_grad():
-            #         residual = self(
-            #             x.transpose(1, 2),
-            #             t,
-            #             encoder_hidden_states=sec_embeds,  # use section embedding as encoder states
-            #             global_hidden_states=length_embeds,  # use length embedding as global states
-            #         )["sample"].transpose(1, 2)
-
-            #     # Update sample with step
-            #     x = noise_scheduler.step(residual, t[0], x).prev_sample
-        else: # use tqdm
+        else:  # use tqdm
             loop = enumerate(tqdm(noise_scheduler.timesteps))
-            
+
         for i, t in loop:
             x = x.to(self.device)
             t = t.to(self.device)
@@ -457,7 +461,7 @@ class UnconditionalDiT(StableAudioDiTModel):
                     t,
                     encoder_hidden_states=sec_embeds,  # use section embedding as encoder states
                     global_hidden_states=length_embeds,  # use length embedding as global states
-                    encoder_attention_mask=sec_attn_mask
+                    encoder_attention_mask=sec_attn_mask,
                 )["sample"].transpose(1, 2)
 
             # Update sample with step
@@ -473,11 +477,16 @@ class UnconditionedTransformerEnc(nn.Module):
     2. Output: (batch, seq_len=4, feature_dim=512)
     """
 
-    def __init__(self, d_model=512, d_ffn=2048, n_head=8, n_layer=6, max_time_step=1000):
+    def __init__(
+        self, d_model=512, d_ffn=2048, n_head=8, n_layer=6, max_time_step=1000
+    ):
         super().__init__()
 
         encoder_layer = nn.TransformerEncoderLayer(
-            d_model=d_model, nhead=n_head, batch_first=True, dim_feedforward=d_ffn,
+            d_model=d_model,
+            nhead=n_head,
+            batch_first=True,
+            dim_feedforward=d_ffn,
         )
         self.model = nn.TransformerEncoder(encoder_layer, num_layers=n_layer)
 
@@ -487,11 +496,15 @@ class UnconditionedTransformerEnc(nn.Module):
         self.pos_emb = nn.Embedding(MAX_BAR, d_model)
 
         # sinusoidal positional encoding
-        self.pos_enc = nn.Parameter(self._generate_sinusoidal_encoding(MAX_BAR, d_model), requires_grad=False)
+        self.pos_enc = nn.Parameter(
+            self._generate_sinusoidal_encoding(MAX_BAR, d_model), requires_grad=False
+        )
 
     def _generate_sinusoidal_encoding(self, max_len, d_model):
         position = torch.arange(0, max_len).unsqueeze(1)
-        div_term = torch.exp(torch.arange(0, d_model, 2) * (-torch.log(torch.tensor(10000.0)) / d_model))
+        div_term = torch.exp(
+            torch.arange(0, d_model, 2) * (-torch.log(torch.tensor(10000.0)) / d_model)
+        )
         pe = torch.zeros(max_len, d_model)
 
     def forward(self, x, timestep):
@@ -500,7 +513,9 @@ class UnconditionedTransformerEnc(nn.Module):
 
         # If timestep is a single integer or scalar tensor, broadcast to batch size
         if isinstance(timestep, int) or timestep.ndim == 0:
-            timestep = torch.full((x.size(0),), timestep, dtype=torch.long, device=x.device)
+            timestep = torch.full(
+                (x.size(0),), timestep, dtype=torch.long, device=x.device
+            )
 
         # Time embedding
         time_emb = self.timestep_emb(timestep).unsqueeze(1)  # (batch, 1, d_model)
@@ -508,28 +523,30 @@ class UnconditionedTransformerEnc(nn.Module):
 
         # Get positional embedding
         seq_len = x.size(1)
-        pos_ids = torch.arange(seq_len, device=x.device).unsqueeze(0).expand(x.size(0), -1) # (batch, seq_len)
+        pos_ids = (
+            torch.arange(seq_len, device=x.device).unsqueeze(0).expand(x.size(0), -1)
+        )  # (batch, seq_len)
         pos_emb = self.pos_emb(pos_ids)  # (batch, seq_len, d_model)
         x = x + pos_emb
 
         x = self.model(x)
 
         return x
-    
+
     @classmethod
     def from_lit_ckpt(cls, ckpt_path):
         # Load model parameters from the specified path of a LightningModule checkpoint
-        lit_ckpt = torch.load(ckpt_path, map_location='cpu')
-        state_dict = lit_ckpt['state_dict']
-        config = lit_ckpt['hyper_parameters']['model_config']
-        
+        lit_ckpt = torch.load(ckpt_path, map_location="cpu")
+        state_dict = lit_ckpt["state_dict"]
+        config = lit_ckpt["hyper_parameters"]["model_config"]
+
         model = cls(**config)
 
         # Remove the 'model.' prefix if it exists
         new_state_dict = {}
         for k, v in state_dict.items():
-            if k.startswith('model.'):
-                new_key = k[len('model.'):]
+            if k.startswith("model."):
+                new_key = k[len("model.") :]
             else:
                 new_key = k
             new_state_dict[new_key] = v
@@ -537,7 +554,7 @@ class UnconditionedTransformerEnc(nn.Module):
         model.load_state_dict(new_state_dict, strict=True)
         model.eval()
         return model
-        
+
 
 if __name__ == "__main__":
     main()
